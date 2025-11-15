@@ -59,6 +59,24 @@ int cs = -1;
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+// ======================== Constants ===================================
+
+#define LED_PIN 2
+#define SCL 22
+#define SDA 21
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// ======================== Variables ===================================
+
+bool isConnected = false;
+unsigned long lastCheckTime = 0;
+const long checkInterval = 1000;
+
 // ======================== Files Functions =============================
 
 void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
@@ -247,6 +265,7 @@ void handleSD() {
   }
 }
 
+
 void printSDInfo() {
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
   Serial.printf("SD Card Size: %lluMB\n", cardSize);
@@ -357,7 +376,7 @@ void connectToNetwork() {
             const char* password = kv.value().as<const char*>();
             
             Serial.print("SSID: ");
-            Serial.print(ssid);
+            Serial.println(ssid);
             //Serial.print(" - Password: ");
             //Serial.println(password);
             
@@ -367,11 +386,29 @@ void connectToNetwork() {
                 return;
             }
         }
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("Error: could not connect to any network");
+            display.println("Error: could not connect to any network");
+            display.display();
+            return;
+
+        }
     }
   
 }
 
-void displayConnection() {
+void displayConnectionOnDisplay() {
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.setTextSize(2);
+    display.println(WiFi.SSID());
+    display.println("IP address");
+    display.setTextSize(1);
+    display.println(WiFi.localIP());
+    display.display();
+}
+
+void displayConnectionOnSerial() {
     Serial.print("Connected to ");
     Serial.println(WiFi.SSID());
     Serial.print("IP address: ");
@@ -381,11 +418,35 @@ void displayConnection() {
 
 void setup() {
   Serial.begin(115200);
+  Wire.begin(SDA, SCL);
+// Init screen
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Try 0x3D if it doesn't work
+    Serial.println(F("SSD1306 allocation failed"));
+    return;
+  }
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(2);
+  display.setCursor(0, 0);
+  display.println("Starting");
+  display.display();
   handleSD();
   printSDInfo();
   wlanScan();
   connectToNetwork();
-  displayConnection();
+  displayConnectionOnDisplay();
+  displayConnectionOnSerial();
 }
 
-void loop() {}
+void loop() {
+    unsigned long currentTime = millis();
+
+    if (WiFi.status() != WL_CONNECTED && currentTime - lastCheckTime >= checkInterval) {
+        connectToNetwork();
+        displayConnectionOnDisplay();
+        displayConnectionOnSerial();
+        lastCheckTime = currentTime;
+    }
+    yield();
+    delay(1);
+}

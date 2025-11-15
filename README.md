@@ -38,8 +38,8 @@ This project enables an ESP32 to automatically connect to WiFi networks using cr
 ### Display I2C Connection (TODO)
 | ESP32 Pin | Display Pin | Description |
 |-----------|-------------|-------------|
-| GPIO 2    | SCL         | Clock       |
-| GPIO 4    | SDA         | Data        |
+| GPIO 22   | SCL         | Clock       |
+| GPIO 21   | SDA         | Data        |
 
 
 ## 🚀 Getting Started

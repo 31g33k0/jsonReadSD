@@ -467,6 +467,8 @@ void loop() {
                 Serial.println(WiFi.SSID(i));
                 Serial.print("RSSI: ");
                 Serial.println(WiFi.RSSI(i));
+                display.println("Found better network");
+                display.display();
                 //Serial.println(obj.value().as<const char*>());
                 //String currentSSID = WiFi.SSID(i);
                 //const char* password = obj[currentSSID.c_str()];
@@ -474,8 +476,6 @@ void loop() {
                 //wlanConnect(currentSSID.c_str(), password);
                 WiFi.disconnect();
                 digitalWrite(LED_PIN, LOW);
-                display.println("Found better network");
-                display.display();
                 connectToNetwork();
                 displayConnectionOnDisplay();
                 displayConnectionOnSerial();

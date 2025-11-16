@@ -52,7 +52,6 @@ int cs = -1;
 */
 
 #include <WiFi.h>
-// #include <WiFiClient.h>
 #include <WiFiMulti.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -72,14 +71,13 @@ int cs = -1;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 WiFiMulti wifiMulti;
-String hostName = "ESP32 Station";
-JsonObject obj; // Déclaration de l'objet JSON global
-
+String hostName = "ESP32_Station";
+JsonObject obj;
 // ======================== Variables ===================================
 
 bool isConnected = false;
 unsigned long lastCheckTime = 0;
-const long checkInterval = 1000;
+const long checkInterval = 2000;
 
 // ======================== Files Functions =============================
 
@@ -339,64 +337,7 @@ void printJsonFile(fs::FS &fs, const char *path) {
   }
   file.close();
 }
-/*
-void connectToNetwork() {
-    for(int i = 0; i < WiFi.scanNetworks(); i++) {
-        Serial.print(i + 1);
-        Serial.print(". ");
-        Serial.print(WiFi.SSID(i));
-        Serial.print(" (RSSI: ");
-        Serial.print(WiFi.RSSI(i));
-        Serial.print(")");
-        Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " [Open]" : "");
-        // Vérifier si le fichier existe
-        if (!SD.exists("/credentials.json")) {
-            Serial.println("Error: credentials.json not found");
-            return;
-        }
 
-        // Ouvrir et lire le fichier
-        File file = SD.open("/credentials.json");
-        if (!file) {
-            Serial.println("Error: could not open file");
-            return;
-        }
-
-        // Parse JSON
-        StaticJsonDocument<1024> doc;
-        DeserializationError error = deserializeJson(doc, file);
-        file.close();
-
-        if (error) {
-            Serial.print("Error: parsing JSON: ");
-            Serial.println(error.c_str());
-            return;
-        }
-
-        // Parcourir toutes les paires clé-valeur
-        JsonObject obj = doc.as<JsonObject>();
-        for (JsonPair kv : obj) {
-            const char* ssid = kv.key().c_str();
-            const char* password = kv.value().as<const char*>();
-            
-            Serial.print("SSID: ");
-            Serial.println(ssid);
-            
-            // Vérifier si le SSID correspond à un réseau disponible
-            if (WiFi.SSID(i) == ssid) {
-                wlanConnect(ssid, password);
-                return;
-            }
-        }
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("Error: could not connect to any network");
-            display.println("Error: could not connect to any network");
-            display.display();
-            return;
-        }
-    }
-}
-*/
 void populateWifiMulti() {
     if (!SD.exists("/credentials.json")) {
         Serial.println("Error: credentials.json not found");
@@ -485,7 +426,7 @@ void setup() {
   display.display();
   handleSD();
   printSDInfo();
-  // wlanScan();
+  wlanScan();
   connectToNetwork();
   displayConnectionOnDisplay();
   displayConnectionOnSerial();
@@ -508,6 +449,42 @@ void loop() {
     else {
         digitalWrite(LED_PIN, HIGH);
     }
+    if (WiFi.status() == WL_CONNECTED) {
+        digitalWrite(LED_PIN, HIGH);
+    }
+    else {
+        digitalWrite(LED_PIN, LOW);
+    }
+/*
+    if (currentTime - lastCheckTime >= checkInterval) {
+        Serial.print("RSSI: ");
+        Serial.println(WiFi.RSSI());
+        int currentRSSI = WiFi.RSSI();
+        for (int i = 0; i < WiFi.scanNetworks(); i++) {
+            if (WiFi.RSSI(i) > currentRSSI && obj.containsKey(WiFi.SSID(i).c_str())) {
+                Serial.println("Found better network");
+                Serial.print("SSID: ");
+                Serial.println(WiFi.SSID(i));
+                Serial.print("RSSI: ");
+                Serial.println(WiFi.RSSI(i));
+                //Serial.println(obj.value().as<const char*>());
+                //String currentSSID = WiFi.SSID(i);
+                //const char* password = obj[currentSSID.c_str()];
+                // Serial.println(obj[currentSSID.c_str()]);
+                //wlanConnect(currentSSID.c_str(), password);
+                WiFi.disconnect();
+                digitalWrite(LED_PIN, LOW);
+                display.println("Found better network");
+                display.display();
+                connectToNetwork();
+                displayConnectionOnDisplay();
+                displayConnectionOnSerial();
+                lastCheckTime = currentTime;
+                break;
+            }
+        }
+    }
+*/
     yield();
     delay(1);
 }

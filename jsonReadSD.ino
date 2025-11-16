@@ -71,6 +71,10 @@ int cs = -1;
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+WiFiMulti wifiMulti;
+String hostName = "ESP32 Station";
+JsonObject obj; // Déclaration de l'objet JSON global
+
 // ======================== Variables ===================================
 
 bool isConnected = false;
@@ -335,7 +339,7 @@ void printJsonFile(fs::FS &fs, const char *path) {
   }
   file.close();
 }
-
+/*
 void connectToNetwork() {
     for(int i = 0; i < WiFi.scanNetworks(); i++) {
         Serial.print(i + 1);
@@ -347,14 +351,14 @@ void connectToNetwork() {
         Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " [Open]" : "");
         // Vérifier si le fichier existe
         if (!SD.exists("/credentials.json")) {
-            Serial.println("Erreur: fichier credentials.json introuvable");
+            Serial.println("Error: credentials.json not found");
             return;
         }
 
         // Ouvrir et lire le fichier
         File file = SD.open("/credentials.json");
         if (!file) {
-            Serial.println("Erreur: impossible d'ouvrir le fichier");
+            Serial.println("Error: could not open file");
             return;
         }
 
@@ -364,7 +368,7 @@ void connectToNetwork() {
         file.close();
 
         if (error) {
-            Serial.print("Erreur de parsing JSON: ");
+            Serial.print("Error: parsing JSON: ");
             Serial.println(error.c_str());
             return;
         }
@@ -377,8 +381,6 @@ void connectToNetwork() {
             
             Serial.print("SSID: ");
             Serial.println(ssid);
-            //Serial.print(" - Password: ");
-            //Serial.println(password);
             
             // Vérifier si le SSID correspond à un réseau disponible
             if (WiFi.SSID(i) == ssid) {
@@ -391,10 +393,56 @@ void connectToNetwork() {
             display.println("Error: could not connect to any network");
             display.display();
             return;
-
         }
     }
-  
+}
+*/
+void populateWifiMulti() {
+    if (!SD.exists("/credentials.json")) {
+        Serial.println("Error: credentials.json not found");
+        return;
+    }
+
+    File file = SD.open("/credentials.json");
+    if (!file) {
+        Serial.println("Error: could not open file");
+        return;
+    }
+
+    StaticJsonDocument<1024> doc;
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+        Serial.print("Error parsing JSON: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    obj = doc.as<JsonObject>();
+    
+    for (JsonPair kv : obj) {
+        const char* ssid = kv.key().c_str();
+        const char* password = kv.value().as<const char*>();
+        Serial.print("Adding SSID: ");
+        Serial.println(ssid);
+        wifiMulti.addAP(ssid, password);
+    }
+}
+
+void connectToNetwork() {
+    populateWifiMulti();
+    if(wifiMulti.run() == WL_CONNECTED) {
+        Serial.println("");
+        Serial.println("WiFi connected");
+        displayConnectionOnDisplay();
+        displayConnectionOnSerial();
+        return;
+    }
+    Serial.println("Error: could not connect to any network");
+    display.println("Error: could not connect to any network");
+    display.display();
+    return;
 }
 
 void displayConnectionOnDisplay() {
@@ -405,6 +453,7 @@ void displayConnectionOnDisplay() {
     display.println("IP address");
     display.setTextSize(1);
     display.println(WiFi.localIP());
+    display.println(hostName);
     display.display();
 }
 
@@ -413,13 +462,17 @@ void displayConnectionOnSerial() {
     Serial.println(WiFi.SSID());
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
+    Serial.print("Host name: ");
+    Serial.println(hostName);
 }
 // ========================= Setup =============================
 
 void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
   Serial.begin(115200);
   Wire.begin(SDA, SCL);
-// Init screen
+// Initialize screen
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {  // Try 0x3D if it doesn't work
     Serial.println(F("SSD1306 allocation failed"));
     return;
@@ -432,20 +485,28 @@ void setup() {
   display.display();
   handleSD();
   printSDInfo();
-  wlanScan();
+  // wlanScan();
   connectToNetwork();
   displayConnectionOnDisplay();
   displayConnectionOnSerial();
+  if (WiFi.status() == WL_CONNECTED) {
+    digitalWrite(LED_PIN, HIGH);
+    // isConnected = true;
+  }
 }
 
 void loop() {
     unsigned long currentTime = millis();
 
     if (WiFi.status() != WL_CONNECTED && currentTime - lastCheckTime >= checkInterval) {
+        digitalWrite(LED_PIN, LOW);
         connectToNetwork();
         displayConnectionOnDisplay();
         displayConnectionOnSerial();
         lastCheckTime = currentTime;
+    }
+    else {
+        digitalWrite(LED_PIN, HIGH);
     }
     yield();
     delay(1);

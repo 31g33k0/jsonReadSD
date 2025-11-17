@@ -349,8 +349,10 @@ void populateWifiMulti() {
         Serial.println("Error: could not open file");
         return;
     }
+    // TODO: make this dynamic
+    // JsonObject obj;
 
-    StaticJsonDocument<1024> doc;
+    StaticJsonDocument<sizeof(file)> doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
 
@@ -360,7 +362,8 @@ void populateWifiMulti() {
         return;
     }
 
-    obj = doc.as<JsonObject>();
+    JsonObject obj = doc.as<JsonObject>();
+    Serial.println("JSON parsed");
     
     for (JsonPair kv : obj) {
         const char* ssid = kv.key().c_str();

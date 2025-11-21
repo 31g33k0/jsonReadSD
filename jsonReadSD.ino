@@ -58,6 +58,7 @@ int cs = -1;
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+
 // ======================== Constants ===================================
 
 #define LED_PIN 2
@@ -93,7 +94,6 @@ void listDir(fs::FS &fs, const char *dirname, uint8_t levels) {
     Serial.println("Not a directory");
     return;
   }
-
   File file = root.openNextFile();
   while (file) {
     if (file.isDirectory()) {
@@ -242,12 +242,15 @@ void handleSD() {
 #ifdef REASSIGN_PINS
   SPI.begin(sck, miso, mosi, cs);
   if (!SD.begin(cs)) {
-#else
-  if (!SD.begin()) {
-#endif
     Serial.println("Card Mount Failed");
     return;
   }
+#else
+  if (!SD.begin()) {
+    Serial.println("Card Mount Failed");
+    return;
+  }
+#endif
   uint8_t cardType = SD.cardType();
 
   if (cardType == CARD_NONE) {
@@ -265,6 +268,9 @@ void handleSD() {
   } else {
     Serial.println("UNKNOWN");
   }
+  Serial.println();
+  Serial.println("SD Card mounted");
+  printSDInfo();
 }
 
 
@@ -343,15 +349,11 @@ void populateWifiMulti() {
         Serial.println("Error: credentials.json not found");
         return;
     }
-
     File file = SD.open("/credentials.json");
     if (!file) {
         Serial.println("Error: could not open file");
         return;
     }
-    // TODO: make this dynamic
-    // JsonObject obj;
-
     StaticJsonDocument<sizeof(file)> doc;
     DeserializationError error = deserializeJson(doc, file);
     file.close();
@@ -409,6 +411,24 @@ void displayConnectionOnSerial() {
     Serial.print("Host name: ");
     Serial.println(hostName);
 }
+
+void initDisplay() {
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.setTextSize(2);
+    display.println("Starting");
+    display.display();
+}
+
+void startWebServer() {
+  WiFiServer server(80);
+  server.begin();
+}
+
+void displayWebPage() {
+}
+
 // ========================= Setup =============================
 
 void setup() {
@@ -421,12 +441,7 @@ void setup() {
     Serial.println(F("SSD1306 allocation failed"));
     return;
   }
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(2);
-  display.setCursor(0, 0);
-  display.println("Starting");
-  display.display();
+  initDisplay();
   handleSD();
   printSDInfo();
   wlanScan();
@@ -437,20 +452,18 @@ void setup() {
     digitalWrite(LED_PIN, HIGH);
     // isConnected = true;
   }
+  startWebServer();
 }
 
 void loop() {
     unsigned long currentTime = millis();
 
-    if (WiFi.status() != WL_CONNECTED && currentTime - lastCheckTime >= checkInterval) {
+    if (WiFi.status() != WL_CONNECTED) {
         digitalWrite(LED_PIN, LOW);
         connectToNetwork();
         displayConnectionOnDisplay();
         displayConnectionOnSerial();
         lastCheckTime = currentTime;
-    }
-    else {
-        digitalWrite(LED_PIN, HIGH);
     }
     if (WiFi.status() == WL_CONNECTED) {
         digitalWrite(LED_PIN, HIGH);
@@ -458,7 +471,6 @@ void loop() {
     else {
         digitalWrite(LED_PIN, LOW);
     }
-/*
     if (currentTime - lastCheckTime >= checkInterval) {
         Serial.print("RSSI: ");
         Serial.println(WiFi.RSSI());
@@ -487,7 +499,93 @@ void loop() {
             }
         }
     }
-*/
+/*
+    WiFiClient client = server.available();
+    if (client) {
+      currentTime = millis();
+      Serial.println("New client");
+      display.println("New client");
+      display.display();
+      String currentLine = "";
+      while (client.connected()) {
+        if (client.available()) {
+          char c = client.read();
+          Serial.write(c);
+          //display.write(c);
+          //display.display();
+          if (c == '\n') {
+            if (currentLine.length() == 0) {
+              // You're at the end of the client's headers
+              break;
+            }
+            currentLine = "";
+          } else if (c != '\r') {
+            currentLine += c;
+          }
+        }
+      }
+      displayWebPage();
+      String newCredentialsSSID = "";
+      String newCredentialsPassword = "";
+      String html = "";
+      html += "HTTP/1.1 200 OK\r\n";
+      html += "Content-Type: text/html\r\n";
+      html += "\r\n";
+      html += "<html><body>";
+      html += "<h1>ESP Web Server</h1>";
+      html += "<p>Connected to ";
+      html += WiFi.SSID();
+      html += "</p>";
+      html += "<p>IP address: ";
+      html += WiFi.localIP();
+      html += "</p>";
+      html += "<p>Host name: ";
+      html += hostName;
+      html += "</p>";
+      html += "<p>MAC address: ";
+      html += WiFi.macAddress();
+      html += "</p>";
+      html += "<p>RSSI: ";
+      html += WiFi.RSSI();
+      html += "</p>";
+      html += "<p>Please enter new credentials</p>";
+      html += "<form action='update' method='post'>";
+      html += "<input type='text' name='ssid' placeholder='SSID'>";
+      html += "<input type='password' name='password' placeholder='Password'>";
+      html += "<input type='submit' value='Update'>";
+      html += "</form>";
+      html += "</body></html>";
+      html += "\r\n";
+      client.println(html);
+
+      //client.stop();
+      //Serial.println("Client disconnected");
+      //display.println("Client disconnected");
+      //display.display();
+
+      // Update credentials
+      //recreate doc at size + String(newCredentialsSSID).length() + String(newCredentialsPassword).length()
+      StaticJsonDocument<sizeof(file) + String(newCredentialsSSID).length() + String(newCredentialsPassword).length() + 2> doc;
+      DeserializationError error = deserializeJson(doc, file);
+      if (error) {
+        Serial.print("deserializeJson() failed: ");
+        Serial.println(error.c_str());
+        return;
+      }
+      doc[newCredentialsSSID] = newCredentialsPassword;
+      // write doc to file
+      File file = SD.open("/credentials.json", FILE_WRITE);
+      if (!file) {
+        Serial.println("Failed to open file for writing");
+        return;
+      }
+      serializeJson(doc, file);
+      file.close();
+      Serial.println("Credentials updated");
+      display.println("Credentials updated");
+      display.display();
+    }
+    */
     yield();
-    delay(1);
+    delay(10);
 }

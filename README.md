@@ -9,12 +9,14 @@ This project enables an ESP32 to automatically connect to WiFi networks using cr
 - **JSON Configuration**: Easy-to-edit JSON format for network credentials
 - **Serial Debugging**: Detailed output for troubleshooting
 - **Flexible Pin Configuration**: Supports both VSPI and HSPI interfaces
+- **Display Support**: Supports OLED display
 
 ## 📋 Prerequisites
 
 - ESP32 development board
 - MicroSD card module
 - MicroSD card (formatted as FAT32)
+- OLED display
 - Jumper wires
 
 ## 🔌 Pin Connections
@@ -35,7 +37,7 @@ This project enables an ESP32 to automatically connect to WiFi networks using cr
 | VSPI      | GPIO 23 | GPIO 19 | GPIO 18 | GPIO 5 |
 | HSPI      | GPIO 13 | GPIO 12 | GPIO 14 | GPIO 15|
 
-### Display I2C Connection (TODO)
+### Display I2C Connection
 | ESP32 Pin | Display Pin | Description |
 |-----------|-------------|-------------|
 | GPIO 22   | SCL         | Clock       |
@@ -106,8 +108,7 @@ This project enables an ESP32 to automatically connect to WiFi networks using cr
 
 ## 📝 Notes
 
-- The device will automatically attempt to connect to any network listed in `credentials.json`
-- The first matching network will be used
+- The device will automatically attempt to connect to the accessible network with the best RSSI listed in `credentials.json`
 - The SD card must remain inserted while the device is powered on (not sure)
 
 ## 📜 License
@@ -119,8 +120,6 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### TODO
-- [ ] Implement auto-selection of best network based on RSSI
 - [ ] Add support for multiple JSON configuration files
-- [ ] Add web interface for configuration
+- [ ] Add web interface for configuration and addition of credentials
 - [ ] Implement OTA (Over-The-Air) updates
-- [ ] Add a display to show the connection status

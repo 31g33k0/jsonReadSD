@@ -465,6 +465,32 @@ void startWebServer() { // TODO: remove
 */
 
 void displayWebPage() {
+    String html = "<html><body>";
+    html += "<h1>ESP32 WiFi Manager</h1>";
+    html += "<p><strong>Connected to:</strong> ";
+    html += WiFi.SSID();
+    html += "</p>";
+    html += "<p><strong>IP address:</strong> ";
+    html += WiFi.localIP().toString();
+    html += "</p>";
+    html += "<p><strong>Host name:</strong> ";
+    html += hostName;
+    html += "</p>";
+    html += "<p><strong>MAC address:</strong> ";
+    html += WiFi.macAddress();
+    html += "</p>";
+    html += "<p><strong>RSSI:</strong> ";
+    html += WiFi.RSSI();
+    html += " dBm</p>";
+    html += "<hr>";
+    html += "<h2>Add New Credentials</h2>";
+    html += "<form action='/update' method='POST'>";
+    html += "<input type='text' name='ssid' placeholder='SSID' required><br><br>";
+    html += "<input type='password' name='password' placeholder='Password' required><br><br>";
+    html += "<input type='submit' value='Add Network'>";
+    html += "</form>";
+    html += "</body></html>";
+    server.send(200, "text/html", html);
 }
 
 // ========================= Setup =============================
@@ -491,15 +517,56 @@ void setup() {
     digitalWrite(LED_PIN, HIGH);
     // isConnected = true;
   }
-  //startWebServer(); // TODO: remove
   server.on("/", HTTP_GET, displayWebPage);
   server.on("/update", HTTP_POST, []() {
-    String newCredentialsSSID = server.arg("ssid");
-    String newCredentialsPassword = server.arg("password");
-    Serial.println("New credentials: ");
-    Serial.println(newCredentialsSSID);
-    Serial.println(newCredentialsPassword);
-    server.send(200, "text/plain", "Credentials updated");
+    String newSSID = server.arg("ssid");
+    String newPassword = server.arg("password");
+
+    if (newSSID.length() == 0) {
+      server.send(400, "text/plain", "Error: SSID cannot be empty");
+      return;
+    }
+
+    Serial.println("Received new credentials:");
+    Serial.print("  SSID: ");
+    Serial.println(newSSID);
+    Serial.println("  Password: [hidden]");
+
+    // Read existing credentials
+    File file = SD.open("/credentials.json");
+    if (!file) {
+      server.send(500, "text/plain", "Error: Failed to open credentials file");
+      return;
+    }
+
+    DeserializationError error = deserializeJson(credentialsDoc, file);
+    file.close();
+
+    if (error) {
+      server.send(500, "text/plain", "Error: Failed to parse credentials file");
+      return;
+    }
+
+    // Add new credentials
+    obj = credentialsDoc.as<JsonObject>();
+    obj[newSSID] = newPassword;
+
+    // Write back to file
+    SD.remove("/credentials.json");
+    file = SD.open("/credentials.json", FILE_WRITE);
+    if (!file) {
+      server.send(500, "text/plain", "Error: Failed to write credentials file");
+      return;
+    }
+
+    serializeJson(credentialsDoc, file);
+    file.close();
+
+    // Add to WiFiMulti
+    wifiMulti.addAP(newSSID.c_str(), newPassword.c_str());
+
+    Serial.println("Credentials saved successfully");
+    server.send(200, "text/html", "<html><body><h1>Success!</h1><p>Credentials added.</p><a href='/'>Back</a></body></html>");
   });
   server.begin();
 }
@@ -574,100 +641,6 @@ void loop() {
         lastCheckTime = currentTime;
     }
     server.handleClient();
-    WiFiClient client = server.available();
-    if (client) {
-      currentTime = millis();
-      Serial.println("New client");
-      display.println("New client");
-      display.display();
-      String currentLine = "";
-      while (client.connected()) {
-        if (client.available()) {
-          char c = client.read();
-          Serial.write(c);
-          //display.write(c);
-          //display.display();
-          if (c == '\n') {
-            if (currentLine.length() == 0) {
-              // You're at the end of the client's headers
-              break;
-            }
-            currentLine = "";
-          } else if (c != '\r') {
-            currentLine += c;
-          }
-        }
-      }
-      displayWebPage();
-      String newCredentialsSSID = "";
-      String newCredentialsPassword = "";
-      String html = "";
-      html += "HTTP/1.1 200 OK\r\n";
-      html += "Content-Type: text/html\r\n";
-      html += "\r\n";
-      html += "<html><body>";
-      html += "<h1>ESP Web Server</h1>";
-      html += "<p>Connected to ";
-      html += WiFi.SSID();
-      html += "</p>";
-      html += "<p>IP address: ";
-      html += WiFi.localIP();
-      html += "</p>";
-      html += "<p>Host name: ";
-      html += hostName;
-      html += "</p>";
-      html += "<p>MAC address: ";
-      html += WiFi.macAddress();
-      html += "</p>";
-      html += "<p>RSSI: ";
-      html += WiFi.RSSI();
-      html += "</p>";
-      html += "<p>Please enter new credentials</p>";
-      html += "<form action='update' method='post'>";
-      html += "<input type='text' name='ssid' placeholder='SSID'>";
-      html += "<input type='password' name='password' placeholder='Password'>";
-      html += "<input type='submit' value='Update'>";
-      html += "</form>";
-      html += "</body></html>";
-      html += "\r\n";
-      client.println(html);
-
-      //client.stop();
-      //Serial.println("Client disconnected");
-      //display.println("Client disconnected");
-      //display.display();
-
-      // Update credentials
-      //recreate doc at size + String(newCredentialsSSID).length() + String(newCredentialsPassword).length()
-      // read file size
-      File file = SD.open("/credentials.json");
-      if (!file) {
-        Serial.println("Failed to open file for reading");
-        return;
-      }
-      size_t fileSize = file.size();
-      file.close();
-      StaticJsonDocument<fileSize + String(newCredentialsSSID).length() + String(newCredentialsPassword).length() + 2> doc;
-      DeserializationError error = deserializeJson(doc, file);
-      if (error) {
-        Serial.print("deserializeJson() failed: ");
-        Serial.println(error.c_str());
-        return;
-      }
-      doc[newCredentialsSSID] = newCredentialsPassword;
-      // write doc to file
-      File file = SD.open("/credentials.json", FILE_WRITE);
-      if (!file) {
-        Serial.println("Failed to open file for writing");
-        return;
-      }
-      serializeJson(doc, file);
-      file.close();
-      Serial.println("Credentials updated");
-      display.println("Credentials updated");
-      display.display();
-    }
-
     yield();
     delay(10);
 }

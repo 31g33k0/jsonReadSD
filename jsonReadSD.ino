@@ -348,6 +348,8 @@ void printJsonFile(fs::FS &fs, const char *path) {
   file.close();
 }
 
+StaticJsonDocument<2048> credentialsDoc;
+
 void populateWifiMulti() {
     if (!SD.exists("/credentials.json")) {
         Serial.println("Error: credentials.json not found");
@@ -358,8 +360,7 @@ void populateWifiMulti() {
         Serial.println("Error: could not open file");
         return;
     }
-    StaticJsonDocument<sizeof(file)> doc;
-    DeserializationError error = deserializeJson(doc, file);
+    DeserializationError error = deserializeJson(credentialsDoc, file);
     file.close();
 
     if (error) {
@@ -368,9 +369,9 @@ void populateWifiMulti() {
         return;
     }
 
-    JsonObject obj = doc.as<JsonObject>();
+    obj = credentialsDoc.as<JsonObject>();
     Serial.println("JSON parsed");
-    
+
     for (JsonPair kv : obj) {
         const char* ssid = kv.key().c_str();
         const char* password = kv.value().as<const char*>();
@@ -381,7 +382,6 @@ void populateWifiMulti() {
 }
 
 void connectToNetwork() {
-    populateWifiMulti();
     if(wifiMulti.run() == WL_CONNECTED) {
         Serial.println("");
         Serial.println("WiFi connected");
@@ -393,6 +393,38 @@ void connectToNetwork() {
     display.println("Error: could not connect to any network");
     display.display();
     return;
+}
+
+void connectToSpecificNetwork(const char* ssid) {
+    if (!obj.containsKey(ssid)) {
+        Serial.println("Error: SSID not in credentials");
+        return;
+    }
+
+    const char* password = obj[ssid].as<const char*>();
+    Serial.print("Attempting to connect to: ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, password);
+
+    unsigned long startAttempt = millis();
+    const unsigned long timeout = 10000; // 10 second timeout
+
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < timeout) {
+        delay(100);
+        Serial.print(".");
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("");
+        Serial.println("Successfully connected to target network");
+        displayConnectionOnDisplay();
+        displayConnectionOnSerial();
+    } else {
+        Serial.println("");
+        Serial.println("Failed to connect to target network, falling back to WiFiMulti");
+        connectToNetwork();
+    }
 }
 
 void displayConnectionOnDisplay() {
@@ -451,6 +483,7 @@ void setup() {
   handleSD();
   printSDInfo();
   wlanScan();
+  populateWifiMulti();
   connectToNetwork();
   displayConnectionOnDisplay();
   displayConnectionOnSerial();
@@ -488,32 +521,57 @@ void loop() {
         digitalWrite(LED_PIN, LOW);
     }
     if (currentTime - lastCheckTime >= checkInterval) {
-        Serial.print("RSSI: ");
-        Serial.println(WiFi.RSSI());
+        Serial.print("Current RSSI: ");
         int currentRSSI = WiFi.RSSI();
-        for (int i = 0; i < WiFi.scanNetworks(); i++) {
-            if (WiFi.RSSI(i) > currentRSSI && obj.containsKey(WiFi.SSID(i).c_str())) {
-                Serial.println("Found better network");
+        Serial.println(currentRSSI);
+
+        // Perform scan ONCE and store the result
+        WiFi.scanDelete(); // Clear previous scan results
+        int numNetworks = WiFi.scanNetworks();
+
+        if (numNetworks > 0) {
+            int bestRSSI = currentRSSI;
+            int bestIndex = -1;
+
+            // Iterate through cached results - no repeated scanning
+            for (int i = 0; i < numNetworks; i++) {
+                String scannedSSID = WiFi.SSID(i);
+                int scannedRSSI = WiFi.RSSI(i);
+
+                // Check if this network is in our credentials and is better
+                if (scannedRSSI > bestRSSI && obj.containsKey(scannedSSID.c_str())) {
+                    bestRSSI = scannedRSSI;
+                    bestIndex = i;
+                }
+            }
+
+            // Only switch if we found a significantly better network (10 dB threshold)
+            if (bestIndex != -1 && bestRSSI > currentRSSI + 10) {
+                String betterSSID = WiFi.SSID(bestIndex);
+                Serial.println("Found significantly better network");
                 Serial.print("SSID: ");
-                Serial.println(WiFi.SSID(i));
+                Serial.println(betterSSID);
                 Serial.print("RSSI: ");
-                Serial.println(WiFi.RSSI(i));
-                display.println("Found better network");
+                Serial.println(bestRSSI);
+                Serial.print("Improvement: +");
+                Serial.print(bestRSSI - currentRSSI);
+                Serial.println(" dB");
+
+                display.clearDisplay();
+                display.setCursor(0, 0);
+                display.setTextSize(1);
+                display.println("Switching to:");
+                display.println(betterSSID);
                 display.display();
-                //Serial.println(obj.value().as<const char*>());
-                //String currentSSID = WiFi.SSID(i);
-                //const char* password = obj[currentSSID.c_str()];
-                // Serial.println(obj[currentSSID.c_str()]);
-                //wlanConnect(currentSSID.c_str(), password);
+
                 WiFi.disconnect();
                 digitalWrite(LED_PIN, LOW);
-                connectToNetwork();
-                displayConnectionOnDisplay();
-                displayConnectionOnSerial();
-                lastCheckTime = currentTime;
-                break;
+                delay(100); // Brief delay to ensure clean disconnect
+                connectToSpecificNetwork(betterSSID.c_str());
             }
         }
+
+        lastCheckTime = currentTime;
     }
     server.handleClient();
     WiFiClient client = server.available();

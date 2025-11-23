@@ -312,6 +312,12 @@ void wlanConnect(const char *ssid, const char *password) {
   Serial.println("Connected!");
 }
 
+void startAccessPoint() {
+  Serial.println("Starting Access Point...");
+  WiFi.softAP("ESP32-AccessPoint", "12345678");
+  Serial.println("Access Point started");
+}
+
 // ========================= JSON functions =============================
 
 void readJsonFile(fs::FS &fs, const char *path) {
@@ -489,6 +495,17 @@ void displayWebPage() {
     html += "<input type='password' name='password' placeholder='Password' required><br><br>";
     html += "<input type='submit' value='Add Network'>";
     html += "</form>";
+    html += "<hr>";
+    html += "<h2>Current Credentials</h2>";
+    html += "<ul>";
+    for (JsonPair kv : obj) {
+        html += "<li>";
+        html += kv.key().c_str();
+        // html += ": ";
+        // html += kv.value().as<const char*>();
+        html += "</li>";
+    }
+    html += "</ul>";
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
@@ -516,6 +533,11 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     digitalWrite(LED_PIN, HIGH);
     // isConnected = true;
+  }
+  else {
+    // isConnected = false;
+    // start Access Point
+    startAccessPoint();
   }
   server.on("/", HTTP_GET, displayWebPage);
   server.on("/update", HTTP_POST, []() {

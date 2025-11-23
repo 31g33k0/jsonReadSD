@@ -57,7 +57,7 @@ int cs = -1;
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-
+#include <WebServer.h>
 
 // ======================== Constants ===================================
 
@@ -79,6 +79,10 @@ JsonObject obj;
 bool isConnected = false;
 unsigned long lastCheckTime = 0;
 const long checkInterval = 2000;
+
+// ======================== Instances ===================================
+
+WebServer server(80);
 
 // ======================== Files Functions =============================
 
@@ -421,10 +425,12 @@ void initDisplay() {
     display.display();
 }
 
-void startWebServer() {
+/*
+void startWebServer() { // TODO: remove
   WiFiServer server(80);
   server.begin();
 }
+*/
 
 void displayWebPage() {
 }
@@ -452,7 +458,17 @@ void setup() {
     digitalWrite(LED_PIN, HIGH);
     // isConnected = true;
   }
-  startWebServer();
+  //startWebServer(); // TODO: remove
+  server.on("/", HTTP_GET, displayWebPage);
+  server.on("/update", HTTP_POST, []() {
+    String newCredentialsSSID = server.arg("ssid");
+    String newCredentialsPassword = server.arg("password");
+    Serial.println("New credentials: ");
+    Serial.println(newCredentialsSSID);
+    Serial.println(newCredentialsPassword);
+    server.send(200, "text/plain", "Credentials updated");
+  });
+  server.begin();
 }
 
 void loop() {
@@ -499,7 +515,7 @@ void loop() {
             }
         }
     }
-/*
+    server.handleClient();
     WiFiClient client = server.available();
     if (client) {
       currentTime = millis();
@@ -565,7 +581,15 @@ void loop() {
 
       // Update credentials
       //recreate doc at size + String(newCredentialsSSID).length() + String(newCredentialsPassword).length()
-      StaticJsonDocument<sizeof(file) + String(newCredentialsSSID).length() + String(newCredentialsPassword).length() + 2> doc;
+      // read file size
+      File file = SD.open("/credentials.json");
+      if (!file) {
+        Serial.println("Failed to open file for reading");
+        return;
+      }
+      size_t fileSize = file.size();
+      file.close();
+      StaticJsonDocument<fileSize + String(newCredentialsSSID).length() + String(newCredentialsPassword).length() + 2> doc;
       DeserializationError error = deserializeJson(doc, file);
       if (error) {
         Serial.print("deserializeJson() failed: ");
@@ -585,7 +609,7 @@ void loop() {
       display.println("Credentials updated");
       display.display();
     }
-    */
+
     yield();
     delay(10);
 }

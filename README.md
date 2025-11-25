@@ -121,5 +121,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### TODO
 - [ ] Add support for multiple JSON configuration files
-- [ ] Add web interface for configuration and addition of credentials
-- [ ] Implement OTA (Over-The-Air) updates
+- [ ] Implement OTA (Over-The-Air) updates if possible (TODO RTFM)
+- [ ] Add QR display of the credentials of the connected network on OLED by pressing a button
+- [ ] Add a button to start an AP and show the credentials of the AP on OLED

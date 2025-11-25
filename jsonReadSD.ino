@@ -71,7 +71,6 @@ int cs = -1;
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-WiFiMulti wifiMulti;
 String hostName = "ESP32_Station";
 JsonObject obj;
 // ======================== Variables ===================================
@@ -79,9 +78,11 @@ JsonObject obj;
 bool isConnected = false;
 unsigned long lastCheckTime = 0;
 const long checkInterval = 2000;
+const long scanInterval = 30000;
 
 // ======================== Instances ===================================
 
+WiFiMulti wifiMulti;
 WebServer server(80);
 
 // ======================== Files Functions =============================
@@ -506,6 +507,32 @@ void displayWebPage() {
         html += "</li>";
     }
     html += "</ul>";
+    html += "<hr>";
+    html += "<h2>Delete a network</h2>";
+    html += "<form action='/delete' method='POST'>";
+    html += "<input type='text' name='ssid' placeholder='SSID' required><br><br>";
+    html += "<input type='submit' value='Delete Network'>";
+    html += "</form>";
+    html += "<hr>";
+    html += "<h2>Actions</h2>";
+    html += "<form action='/scan' method='GET'>";
+    html += "<button type='submit'>Scan networks</button>";
+    html += "</form>";
+    html += "<form action='/connect' method='POST'>";
+    html += "<button type='submit'>Connect to network</button>";
+    html += "</form>";
+    html += "<form action='/disconnect' method='POST'>";
+    html += "<button type='submit'>Disconnect from network</button>";
+    html += "</form>";
+    html += "<form action='/restart' method='POST'>";
+    html += "<button type='submit'>Restart ESP32</button>";
+    html += "</form>";
+    html += "<form action='/startAP' method='POST'>";
+    html += "<button type='submit'>Start AP</button>";
+    html += "</form>";
+    html += "<form action='/stopAP' method='POST'>";
+    html += "<button type='submit'>Stop AP</button>";
+    html += "</form>";
     html += "</body></html>";
     server.send(200, "text/html", html);
 }
@@ -525,8 +552,8 @@ void setup() {
   initDisplay();
   handleSD();
   printSDInfo();
-  wlanScan();
   populateWifiMulti();
+  wlanScan();
   connectToNetwork();
   displayConnectionOnDisplay();
   displayConnectionOnSerial();
@@ -536,7 +563,6 @@ void setup() {
   }
   else {
     // isConnected = false;
-    // start Access Point
     startAccessPoint();
   }
   server.on("/", HTTP_GET, displayWebPage);
@@ -590,6 +616,86 @@ void setup() {
     Serial.println("Credentials saved successfully");
     server.send(200, "text/html", "<html><body><h1>Success!</h1><p>Credentials added.</p><a href='/'>Back</a></body></html>");
   });
+  server.on("/delete", HTTP_POST, []() {
+    String ssid = server.arg("ssid");
+
+    if (ssid.length() == 0) {
+      server.send(400, "text/plain", "Error: SSID cannot be empty");
+      return;
+    }
+
+    Serial.println("Received delete request for SSID: " + ssid);
+
+    // Remove from WiFiMulti
+    wifiMulti.removeAP(ssid.c_str());
+
+    // Test credentials file
+    File file = SD.open("/credentials.json");
+    if (!file) {
+      server.send(500, "text/plain", "Error: Failed to open credentials file");
+      return;
+    }
+
+    DeserializationError error = deserializeJson(credentialsDoc, file);
+    file.close();
+
+    if (error) {
+      server.send(500, "text/plain", "Error: Failed to parse credentials file");
+      return;
+    }
+
+    // Remove from JSON object
+    obj = credentialsDoc.as<JsonObject>();
+    obj.remove(ssid);
+
+    // Write back to file
+    SD.remove("/credentials.json");
+    file = SD.open("/credentials.json", FILE_WRITE);
+    if (!file) {
+      server.send(500, "text/plain", "Error: Failed to write credentials file");
+      return;
+    }
+
+    serializeJson(credentialsDoc, file);
+    file.close();
+
+    Serial.println("Credentials deleted successfully");
+    server.send(200, "text/html", "<html><body><h1>Success!</h1><p>Credentials deleted.</p><a href='/'>Back</a></body></html>");
+  });
+  server.on("/restart", HTTP_GET, []() {
+    Serial.println("Received restart request");
+    ESP.restart();
+  });
+  server.on("/scan", HTTP_GET, []() {
+    Serial.println("Received scan request");
+    wlanScan();
+    server.send(200, "text/html", "<html><body><h1>Scan completed</h1><p>Scan results:</p><ul>" + scanResults + "</ul><a href='/'>Back</a></body></html>");
+  });
+  server.on("/connect", HTTP_GET, []() {
+    Serial.println("Received connect request");
+    wlanScan();
+    WiFi.disconnect();
+    delay(100);
+    connectToNetwork();
+    displayConnectionOnDisplay();
+    displayConnectionOnSerial();
+    server.send(200, "text/html", "<html><body><h1>Connected</h1><p>Connected to network.</p><a href='/'>Back</a></body></html>");
+  });
+  server.on("/disconnect", HTTP_GET, []() {
+    Serial.println("Received disconnect request");
+    WiFi.disconnect();
+    server.send(200, "text/html", "<html><body><h1>Disconnected</h1><p>Disconnected from network.</p><a href='/'>Back</a></body></html>");
+  });
+  server.on("/startAP", HTTP_GET, []() {
+    Serial.println("Received start AP request");
+    startAccessPoint();
+    server.send(200, "text/html", "<html><body><h1>AP started</h1><p>AP started.</p><a href='/'>Back</a></body></html>");
+  });
+  server.on("/stopAP", HTTP_GET, []() {
+    Serial.println("Received stop AP request");
+    stopAccessPoint();
+    server.send(200, "text/html", "<html><body><h1>AP stopped</h1><p>AP stopped.</p><a href='/'>Back</a></body></html>");
+  });
   server.begin();
 }
 
@@ -622,7 +728,7 @@ void loop() {
             int bestRSSI = currentRSSI;
             int bestIndex = -1;
 
-            // Iterate through cached results - no repeated scanning
+            // Iterate through cached results
             for (int i = 0; i < numNetworks; i++) {
                 String scannedSSID = WiFi.SSID(i);
                 int scannedRSSI = WiFi.RSSI(i);
@@ -634,8 +740,9 @@ void loop() {
                 }
             }
 
-            // Only switch if we found a significantly better network (10 dB threshold)
-            if (bestIndex != -1 && bestRSSI > currentRSSI + 10) {
+            // Only switch if we found another significantly better network (10 dB threshold)
+            String currentSSID = WiFi.SSID();
+            if (bestIndex != -1 && bestRSSI > currentRSSI + 10 && currentSSID != WiFi.SSID(bestIndex)) {
                 String betterSSID = WiFi.SSID(bestIndex);
                 Serial.println("Found significantly better network");
                 Serial.print("SSID: ");
@@ -648,7 +755,7 @@ void loop() {
 
                 display.clearDisplay();
                 display.setCursor(0, 0);
-                display.setTextSize(1);
+                display.setTextSize(2);
                 display.println("Switching to:");
                 display.println(betterSSID);
                 display.display();

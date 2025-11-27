@@ -58,6 +58,23 @@ int cs = -1;
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <WebServer.h>
+// Include generated files
+#include "index_html.h"
+#include "wifi_manager.h"
+
+// Variables globales
+String scanResults = "";
+
+// Déclaration de la fonction stopAccessPoint
+void stopAccessPoint() {
+    WiFi.softAPdisconnect(true);
+    Serial.println("Access Point stopped");
+}
+
+// Déclaration des tableaux de caractères pour les fichiers HTML
+extern const char wifi_manager_html[];
+
+extern const char index_html[];
 
 // ======================== Constants ===================================
 
@@ -292,6 +309,10 @@ void wlanScan() {
   int n = WiFi.scanNetworks();
   Serial.print("Number of networks found: ");
   Serial.println(n);
+  
+  // Réinitialiser scanResults
+  scanResults = "";
+  
   for (int i = 0; i < n; ++i) {
     Serial.print(i + 1);
     Serial.print(". ");
@@ -300,6 +321,17 @@ void wlanScan() {
     Serial.print(WiFi.RSSI(i));
     Serial.print(")");
     Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " [Open]" : "");
+    
+    // Pour l'interface web // TODO
+    scanResults += "<li>";
+    scanResults += WiFi.SSID(i);
+    scanResults += " (RSSI: ";
+    scanResults += WiFi.RSSI(i);
+    scanResults += " dBm)";
+    if (WiFi.encryptionType(i) != WIFI_AUTH_OPEN) {
+      scanResults += " [Sécurisé]";
+    }
+    scanResults += "</li>";
   }
 }
 
@@ -471,70 +503,11 @@ void startWebServer() { // TODO: remove
 }
 */
 
+
 void displayWebPage() {
-    String html = "<html><body>";
-    html += "<h1>ESP32 WiFi Manager</h1>";
-    html += "<p><strong>Connected to:</strong> ";
-    html += WiFi.SSID();
-    html += "</p>";
-    html += "<p><strong>IP address:</strong> ";
-    html += WiFi.localIP().toString();
-    html += "</p>";
-    html += "<p><strong>Host name:</strong> ";
-    html += hostName;
-    html += "</p>";
-    html += "<p><strong>MAC address:</strong> ";
-    html += WiFi.macAddress();
-    html += "</p>";
-    html += "<p><strong>RSSI:</strong> ";
-    html += WiFi.RSSI();
-    html += " dBm</p>";
-    html += "<hr>";
-    html += "<h2>Add New Credentials</h2>";
-    html += "<form action='/update' method='POST'>";
-    html += "<input type='text' name='ssid' placeholder='SSID' required><br><br>";
-    html += "<input type='password' name='password' placeholder='Password' required><br><br>";
-    html += "<input type='submit' value='Add Network'>";
-    html += "</form>";
-    html += "<hr>";
-    html += "<h2>Current Credentials</h2>";
-    html += "<ul>";
-    for (JsonPair kv : obj) {
-        html += "<li>";
-        html += kv.key().c_str();
-        // html += ": ";
-        // html += kv.value().as<const char*>();
-        html += "</li>";
-    }
-    html += "</ul>";
-    html += "<hr>";
-    html += "<h2>Delete a network</h2>";
-    html += "<form action='/delete' method='POST'>";
-    html += "<input type='text' name='ssid' placeholder='SSID' required><br><br>";
-    html += "<input type='submit' value='Delete Network'>";
-    html += "</form>";
-    html += "<hr>";
-    html += "<h2>Actions</h2>";
-    html += "<form action='/scan' method='GET'>";
-    html += "<button type='submit'>Scan networks</button>";
-    html += "</form>";
-    html += "<form action='/connect' method='POST'>";
-    html += "<button type='submit'>Connect to network</button>";
-    html += "</form>";
-    html += "<form action='/disconnect' method='POST'>";
-    html += "<button type='submit'>Disconnect from network</button>";
-    html += "</form>";
-    html += "<form action='/restart' method='POST'>";
-    html += "<button type='submit'>Restart ESP32</button>";
-    html += "</form>";
-    html += "<form action='/startAP' method='POST'>";
-    html += "<button type='submit'>Start AP</button>";
-    html += "</form>";
-    html += "<form action='/stopAP' method='POST'>";
-    html += "<button type='submit'>Stop AP</button>";
-    html += "</form>";
-    html += "</body></html>";
-    server.send(200, "text/html", html);
+    // Rediriger vers la nouvelle interface
+    server.sendHeader("Location", "/wifi_manager.html");
+    server.send(302, "text/plain", "Redirecting to WiFi Manager...");
 }
 
 // ========================= Setup =============================
@@ -627,7 +600,10 @@ void setup() {
     Serial.println("Received delete request for SSID: " + ssid);
 
     // Remove from WiFiMulti
-    wifiMulti.removeAP(ssid.c_str());
+    // wifiMulti.removeAP(ssid.c_str()); // TODO: remove
+    // TODO : wifiMulti.APlistClean();
+    // TODO repopulate wifiMulti with credentials from SD AFTER we remove the AP in credentials
+    
 
     // Test credentials file
     File file = SD.open("/credentials.json");
@@ -696,12 +672,28 @@ void setup() {
     stopAccessPoint();
     server.send(200, "text/html", "<html><body><h1>AP stopped</h1><p>AP stopped.</p><a href='/'>Back</a></body></html>");
   });
+  // Servir la page wifi_manager.html
+  server.on("/wifi_manager.html", HTTP_GET, []() {
+    server.send(200, "text/html", String(wifi_manager_html));
+  });
+  server.on("/index.html", HTTP_GET, []() {
+    server.send(200, "text/html", String(index_html));
+  });
+  
+  // Servir la page d'accueil
+  server.on("/", HTTP_GET, []() {
+    server.send(200, "text/html", "<html><body>"
+                                 "<h1>ESP32 WiFi Manager</h1>"
+                                 "<p><a href='/wifi_manager.html'>Accéder au gestionnaire WiFi</a></p>"
+                                 "<p><a href='/index.html'>Page d'accueil</a></p>"
+                                 "</body></html>");
+  });
   server.begin();
 }
 
 void loop() {
     unsigned long currentTime = millis();
-
+    Serial.println(WiFi.status()); //test
     if (WiFi.status() != WL_CONNECTED) {
         digitalWrite(LED_PIN, LOW);
         connectToNetwork();

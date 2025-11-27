@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 WiFi Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        form {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        input[type="text"],
+        input[type="password"],
+        button {
+            padding: 8px 12px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 10px 15px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .status {
+            background-color: #e8f4f8;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <h1>ESP32 WiFi Manager</h1>
+    
+    <div class="status">
+        <p><strong>Connected to:</strong> <span id="ssid">Not connected</span></p>
+        <p><strong>IP address:</strong> <span id="ip">-</span></p>
+        <p><strong>Host name:</strong> <span id="hostname">-</span></p>
+        <p><strong>MAC address:</strong> <span id="mac">-</span></p>
+        <p><strong>RSSI:</strong> <span id="rssi">-</span> dBm</p>
+    </div>
+    
+    <hr>
+    
+    <h2>Add New Credentials</h2>
+    <form id="addNetworkForm">
+        <input type="text" name="ssid" placeholder="SSID" required><br><br>
+        <input type="password" name="password" placeholder="Password" required><br><br>
+        <button type="submit">Add Network</button>
+    </form>
+    
+    <hr>
+    
+    <h2>Current Credentials</h2>
+    <ul id="networksList">
+        <!-- Networks will be populated by JavaScript -->
+    </ul>
+    
+    <hr>
+    
+    <h2>Delete a network</h2>
+    <form id="deleteNetworkForm">
+        <input type="text" name="ssid" placeholder="SSID" required><br><br>
+        <button type="submit">Delete Network</button>
+    </form>
+    
+    <hr>
+    
+    <h2>Actions</h2>
+    <button onclick="window.location.href='/scan'">Scan networks</button>
+    <button onclick="sendRequest('/connect', 'POST')">Connect to network</button>
+    <button onclick="sendRequest('/disconnect', 'POST')">Disconnect from network</button>
+    <button onclick="if(confirm('Are you sure you want to restart?')) sendRequest('/restart', 'POST')">Restart ESP32</button>
+    <button onclick="sendRequest('/startAP', 'POST')">Start AP</button>
+    <button onclick="sendRequest('/stopAP', 'POST')">Stop AP</button>
+
+    <script>
+        // Function to update status
+        function updateStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('ssid').textContent = data.ssid || 'Not connected';
+                    document.getElementById('ip').textContent = data.ip || '-';
+                    document.getElementById('hostname').textContent = data.hostname || '-';
+                    document.getElementById('mac').textContent = data.mac || '-';
+                    document.getElementById('rssi').textContent = data.rssi || '-';
+                });
+        }
+
+        // Function to load networks list
+        function loadNetworks() {
+            fetch('/networks')
+                .then(response => response.json())
+                .then(networks => {
+                    const list = document.getElementById('networksList');
+                    list.innerHTML = '';
+                    networks.forEach(network => {
+                        const li = document.createElement('li');
+                        li.textContent = network.ssid;
+                        list.appendChild(li);
+                    });
+                });
+        }
+
+        // Function to send form data
+        function sendFormData(formElement, url) {
+            const formData = new FormData(formElement);
+            const data = {};
+            formData.forEach((value, key) => data[key] = value);
+            
+            return fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+        }
+
+        // Generic function to send requests
+        function sendRequest(url, method = 'GET') {
+            fetch(url, { method })
+                .then(response => {
+                    if (response.ok) {
+                        return response.text();
+                    }
+                    throw new Error('Request failed');
+                })
+                .then(html => {
+                    // If the response is HTML, replace the current document
+                    if (html.trim().startsWith('<!DOCTYPE') || html.trim().startsWith('<html>')) {
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    } else {
+                        alert('Action completed successfully');
+                        updateStatus();
+                        loadNetworks();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+
+        // Form submission handlers
+        document.getElementById('addNetworkForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            sendFormData(this, '/update')
+                .then(response => response.text())
+                .then(() => {
+                    alert('Network added successfully');
+                    this.reset();
+                    loadNetworks();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error adding network');
+                });
+        });
+
+        document.getElementById('deleteNetworkForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to delete this network?')) {
+                sendFormData(this, '/delete')
+                    .then(response => response.text())
+                    .then(() => {
+                        alert('Network deleted successfully');
+                        this.reset();
+                        loadNetworks();
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error deleting network');
+                    });
+            }
+        });
+
+        // Initial load
+        updateStatus();
+        loadNetworks();
+        // Update status every 5 seconds
+        setInterval(updateStatus, 5000);
+    </script>
+</body>
+</html>
